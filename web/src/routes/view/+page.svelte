@@ -1,9 +1,17 @@
 <script lang="ts">
+	import MeasurementModal from '$lib/components/MeasurementView.svelte';
 
-let measurements = $state(128);
-let measurements_today = $state(12);
-let muscle_activation = $state(0.958);
+	let measurements = $state(128);
+	let measurements_today = $state(12);
+	let muscle_activation = $state(0.958);
 
+	let modalOpen = $state(false);
+	let selectedMeasurement = $state('');
+
+	function openMeasurement(id: string) {
+		selectedMeasurement = id;
+		modalOpen = true;
+	}
 </script>
 
 <main class="hero">
@@ -51,7 +59,7 @@ let muscle_activation = $state(0.958);
 					<td>98%</td>
 					<td>0.12</td>
 					<td>Normal</td>
-					<td><a href="/measurement/1024" class="view-btn">View</a></td>
+					<td><button class="outline" onclick={() => openMeasurement('1024')}> View </button></td>
 				</tr>
 
 				<tr>
@@ -140,6 +148,7 @@ let muscle_activation = $state(0.958);
 			</tbody>
 		</table>
 	</div>
+	<MeasurementModal open={modalOpen} measurementId={selectedMeasurement} />
 </main>
 
 <style>
