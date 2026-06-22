@@ -9,7 +9,8 @@ class Hero(SQLModel):
 
 
 class ArduinoSession(Hero):
-    session_id: int = Field()
+    session_id: str = Field()
+    measurements: list[int]
 
 
 sqlite_file_name = "database.db"
@@ -27,3 +28,6 @@ def create_db_and_tables():
 def get_session():
     with Session(engine) as session:
         yield session
+
+
+SessionDep = Annotated[Session, Depends(get_session)]
