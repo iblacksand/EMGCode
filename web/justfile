@@ -1,3 +1,0 @@
-package:
-    bun run build
-    ouch c -y main.py build requirements.txt web.zip

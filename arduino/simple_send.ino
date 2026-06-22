@@ -32,7 +32,7 @@ void setup() {
 void loop() {
   int value = analogRead(A0);
 
-  String path = "/api/arduino/" + String(value);
+  String path = "/api/arduino/single/" + String(value);
 
   Serial.print("Sending GET ");
   Serial.println(path);
