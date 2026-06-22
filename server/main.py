@@ -18,6 +18,8 @@ from data import (
     create_db_and_tables,
 )
 
+MAX_BATCH_SIZE = 50_000
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ def arduino_batch(
             detail="Empty batch",
         )
 
-    if len(req.values) > 5000:
+    if len(req.values) > MAX_BATCH_SIZE:  # TODO: Look at a good cap
         raise HTTPException(
             status_code=400,
             detail="Batch too large",
