@@ -1,9 +1,25 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import logging
+import uuid
+
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlmodel import select
-from data import ArduinoSession, SessionDep, create_db_and_tables, get_session
-import uuid
+
+from data import (
+    ArduinoSession,
+    MeasurementBatch,
+    SessionDep,
+    create_db_and_tables,
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class ArduinoBatchRequest(BaseModel):
@@ -14,8 +30,8 @@ class ArduinoBatchRequest(BaseModel):
 
 
 app = FastAPI()
+
 receivers: set[WebSocket] = set()
-current_session = None
 
 
 @app.on_event("startup")
@@ -28,36 +44,152 @@ def hello():
     return {"message": "Hello from FastAPI"}
 
 
-@app.post("/api/arduino/batch")
-def arduino_batch(req: ArduinoBatchRequest, session: SessionDep) -> None:
-    global current_session
-    arduino_session = None
-    if current_session == req.session:
-        arduino_session = session.exec(
-            select(ArduinoSession).where(ArduinoSession.session_id == req.session)
-        ).first()
-    if arduino_session is None:
-        current_session = req.session
-        arduino_session = ArduinoSession(session_id=req.session, measurements=[])
-    arduino_session.measurements.extend(req.values)
-    session.add(arduino_session)
+@app.post("/api/arduino/new_session")
+def new_session(
+    session: SessionDep,
+) -> dict[str, str]:
+    session_id = str(uuid.uuid4())
+
+    db_session = ArduinoSession(session_id=session_id)
+
+    session.add(db_session)
     session.commit()
+
+    logger.info(
+        "Created session %s",
+        session_id,
+    )
+
+    return {
+        "session": session_id,
+    }
+
+
+@app.post("/api/arduino/batch")
+def arduino_batch(
+    req: ArduinoBatchRequest,
+    session: SessionDep,
+):
+    if len(req.values) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Empty batch",
+        )
+
+    if len(req.values) > 5000:
+        raise HTTPException(
+            status_code=400,
+            detail="Batch too large",
+        )
+
+    arduino_session = session.exec(
+        select(ArduinoSession).where(ArduinoSession.session_id == req.session)
+    ).first()
+
+    if arduino_session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Unknown session",
+        )
+
+    batch = MeasurementBatch(
+        session_id=req.session,
+        start_micros=req.start_micros,
+        sample_period_us=req.sample_period_us,
+        values=req.values,
+    )
+
+    session.add(batch)
+    session.commit()
+    session.refresh(batch)
+
+    logger.info(
+        "Session=%s Batch=%s Samples=%d StartMicros=%d",
+        req.session,
+        batch.id,
+        len(req.values),
+        req.start_micros,
+    )
+
+    return {
+        "success": True,
+        "batch_id": batch.id,
+        "samples": len(req.values),
+    }
+
+
+@app.get("/api/arduino/session/{session_id}")
+def session_summary(
+    session_id: str,
+    session: SessionDep,
+):
+    arduino_session = session.exec(
+        select(ArduinoSession).where(ArduinoSession.session_id == session_id)
+    ).first()
+
+    if arduino_session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found",
+        )
+
+    batches = session.exec(
+        select(MeasurementBatch).where(MeasurementBatch.session_id == session_id)
+    ).all()
+
+    total_samples = sum(len(batch.values) for batch in batches)
+
+    return {
+        "session": session_id,
+        "batch_count": len(batches),
+        "sample_count": total_samples,
+    }
+
+
+@app.get("/api/arduino/session/{session_id}/data")
+def session_data(
+    session_id: str,
+    session: SessionDep,
+):
+    arduino_session = session.exec(
+        select(ArduinoSession).where(ArduinoSession.session_id == session_id)
+    ).first()
+
+    if arduino_session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found",
+        )
+
+    batches = session.exec(
+        select(MeasurementBatch).where(MeasurementBatch.session_id == session_id)
+    ).all()
+
+    return [
+        {
+            "batch_id": batch.id,
+            "start_micros": batch.start_micros,
+            "sample_period_us": batch.sample_period_us,
+            "values": batch.values,
+        }
+        for batch in batches
+    ]
 
 
 @app.get("/api/arduino/single/{value}")
-async def arduino_value(value: int) -> None:
-    try:
-        dead = []
-        for receiver in receivers:
-            try:
-                await receiver.send_text(str(value))
-            except Exception:
-                dead.append(receiver)
+async def arduino_value(value: int):
+    dead = []
 
-        for receiver in dead:
-            receivers.discard(receiver)
-    except WebSocketDisconnect:
-        pass
+    for receiver in receivers:
+        try:
+            await receiver.send_text(str(value))
+        except Exception:
+            dead.append(receiver)
+
+    for receiver in dead:
+        receivers.discard(receiver)
+
+    return {"sent_to": len(receivers)}
 
 
 @app.websocket("/ws/receive")
@@ -65,22 +197,35 @@ async def receive_channel(ws: WebSocket):
     await ws.accept()
     receivers.add(ws)
 
+    logger.info(
+        "Receiver connected. Total receivers=%d",
+        len(receivers),
+    )
+
     try:
         while True:
-            _ = await ws.receive_text()  # keep connection alive
+            await ws.receive_text()
     except WebSocketDisconnect:
         receivers.discard(ws)
+
+        logger.info(
+            "Receiver disconnected. Total receivers=%d",
+            len(receivers),
+        )
 
 
 @app.websocket("/ws/send")
 async def send_channel(ws: WebSocket):
     await ws.accept()
 
+    logger.info("Sender connected")
+
     try:
         while True:
             value = await ws.receive_text()
 
             dead = []
+
             for receiver in receivers:
                 try:
                     await receiver.send_text(value)
@@ -91,14 +236,14 @@ async def send_channel(ws: WebSocket):
                 receivers.discard(receiver)
 
     except WebSocketDisconnect:
-        pass
+        logger.info("Sender disconnected")
 
 
-@app.post("/api/arduino/new_session")
-def new_session() -> dict[str, str]:
-    global current_session
-    current_session = str(uuid.uuid4())
-    return {"session": current_session}
-
-
-app.mount("/", StaticFiles(directory="build", html=True), name="static")
+app.mount(
+    "/",
+    StaticFiles(
+        directory="build",
+        html=True,
+    ),
+    name="static",
+)
