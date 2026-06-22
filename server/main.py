@@ -1,14 +1,24 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from data import create_db_and_tables
+import uuid
 
 
 class ArduinoBatchRequest(BaseModel):
+    session: str
+    start_micros: int
+    sample_period_us: int
     values: list[int]
 
 
 app = FastAPI()
 receivers: set[WebSocket] = set()
+
+
+@app.on("startup")
+def on_startup():
+    create_db_and_tables()
 
 
 @app.get("/api/hello")
@@ -69,6 +79,11 @@ async def send_channel(ws: WebSocket):
 
     except WebSocketDisconnect:
         pass
+
+
+@app.post("/api/arduino/new_session")
+def new_session():
+    return {"session": str(uuid.uuid4())}
 
 
 app.mount("/", StaticFiles(directory="build", html=True), name="static")
