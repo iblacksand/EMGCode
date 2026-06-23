@@ -1,13 +1,20 @@
+from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import Depends
-from sqlalchemy import Column
 from sqlalchemy.types import JSON
-from sqlmodel import Field, Session, SQLModel, create_engine
+from sqlmodel import TIMESTAMP, Column, Field, Session, SQLModel, create_engine, text
 
 
 class ArduinoSession(SQLModel, table=True):
     session_id: str = Field(primary_key=True)
+    created_datetime: Optional[datetime] = Field(
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        )
+    )
 
 
 class MeasurementBatch(SQLModel, table=True):

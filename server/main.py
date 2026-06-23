@@ -159,6 +159,17 @@ def list_sessions(session: SessionDep):
     return [s.model_dump(mode="json") for s in all_sessions]
 
 
+@app.get("/api/list_batches")
+def list_batches(session: SessionDep):
+    all_sessions = session.exec(select(MeasurementBatch)).all()
+    if all_sessions is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No sessions not found",
+        )
+    return [s.model_dump(mode="json") for s in all_sessions]
+
+
 @app.get("/api/arduino/session/{session_id}/data")
 def session_data(
     session_id: str,
