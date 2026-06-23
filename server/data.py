@@ -3,7 +3,16 @@ from typing import Annotated, Optional
 
 from fastapi import Depends
 from sqlalchemy.types import JSON
-from sqlmodel import TIMESTAMP, Column, Field, Session, SQLModel, create_engine, text
+from sqlmodel import (
+    TIMESTAMP,
+    Column,
+    Field,
+    Relationship,
+    Session,
+    SQLModel,
+    create_engine,
+    text,
+)
 
 
 class ArduinoSession(SQLModel, table=True):
@@ -15,12 +24,20 @@ class ArduinoSession(SQLModel, table=True):
             server_default=text("CURRENT_TIMESTAMP"),
         )
     )
+    measurement_batches: list["MeasurementBatch"] = Relationship(
+        back_populates="arduino_session"
+    )
 
 
 class MeasurementBatch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str | None = Field(
+        default=None, foreign_key="arduinosession.session_id"
+    )
 
-    session_id: str = Field(index=True)
+    arduino_session: list[ArduinoSession] = Relationship(
+        back_populates="measurement_batches"
+    )
 
     start_micros: int
     sample_period_us: int

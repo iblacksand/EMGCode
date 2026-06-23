@@ -52,7 +52,7 @@ def new_session(
 ) -> dict[str, str]:
     session_id = str(uuid.uuid4())
 
-    db_session = ArduinoSession(session_id=session_id)
+    db_session = ArduinoSession(session_id=session_id, created_datetime=None)
 
     session.add(db_session)
     session.commit()
