@@ -78,7 +78,7 @@ def arduino_batch(
             detail="Empty batch",
         )
 
-    if len(req.values) > MAX_BATCH_SIZE:  # TODO: Look at a good cap
+    if len(req.values) > MAX_BATCH_SIZE:
         raise HTTPException(
             status_code=400,
             detail="Batch too large",
@@ -146,6 +146,17 @@ def session_summary(
         "batch_count": len(batches),
         "sample_count": total_samples,
     }
+
+
+@app.get("/api/list_sessions")
+def list_sessions(session: SessionDep):
+    all_sessions = session.exec(select(ArduinoSession)).all()
+    if all_sessions is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No sessions not found",
+        )
+    return [s.model_dump(mode="json") for s in all_sessions]
 
 
 @app.get("/api/arduino/session/{session_id}/data")
