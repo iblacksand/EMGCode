@@ -13,7 +13,7 @@ const int BATCH_SIZE = 500;
 WiFiClient wifi;
 HttpClient client(wifi, SERVER, PORT);
 
-string sessionId = "";
+String sessionId = "";
 
 int values[BATCH_SIZE];
 int valueCount = 0;
