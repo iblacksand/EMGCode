@@ -9,7 +9,7 @@ from datetime import datetime
 
 import serial
 
-PORT = "/dev/tty.usbmodemACA7043BDEEC2"  # Replace with your Arduino port
+PORT = "/dev/tty.usbmodemACA7043BDEEC2"
 BAUD = 115200
 
 ser = serial.Serial(PORT, BAUD)
