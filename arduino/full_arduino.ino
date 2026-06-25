@@ -4,8 +4,8 @@
 
 
 const int RED_LIGHT_PIN = 3;
-const int BLUE_LIGHT_PIN = 2;
-const int GREEN_LIGHT_PIN = 1;
+const int BLUE_LIGHT_PIN = 1;
+const int GREEN_LIGHT_PIN = 2;
 
 const char* WIFI_SSID = "EnMedPrintFarm";
 const char* WIFI_PASSWORD = "Physician33r";
