@@ -23,6 +23,8 @@ String sessionId = "";
 int values[BATCH_SIZE];
 int valueCount = 0;
 
+bool is_calibrated = false;
+
 unsigned long batchStartMicros = 0;
 unsigned long lastSampleMicros = 0;
 
@@ -38,6 +40,11 @@ enum LightStatus {
 
 LightStatus current_status = LightStatus::Ignore;
 
+
+void set_light_status(LightStatus status) {
+  current_status = status;
+  update_lights();
+}
 
 void update_lights() {
   switch (current_status) {
@@ -212,10 +219,10 @@ void setup() {
 
 void loop() {
 
-  // update lights based on current status
   update_lights();
 
   if (WiFi.status() != WL_CONNECTED) {
+    set_light_status(LightStatus::Error);
     connectWifi();
   }
 
