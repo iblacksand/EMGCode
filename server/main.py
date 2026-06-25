@@ -17,11 +17,20 @@ from data import (
     SessionDep,
     create_db_and_tables,
 )
+from state import EMGState
 
 MAX_BATCH_SIZE = 50_000
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+emg_state = EMGState()
+
+
+class UpdateSettingsRequest(BaseModel):
+    normal_peak_min: float | None
+    normal_peak_max: float | None
+    recovery_improvement: float | None
 
 
 class ArduinoBatchRequest(BaseModel):
@@ -168,6 +177,19 @@ def list_batches(session: SessionDep):
             detail="No sessions not found",
         )
     return [s.model_dump(mode="json") for s in all_sessions]
+
+
+@app.post("/api/update_settings")
+async def update_settings(req: UpdateSettingsRequest) -> bool:
+    (cur_min, cur_max) = emg_state.settings.normal_peak
+    if req.normal_peak_min is not None:
+        cur_min = req.normal_peak_min
+    if req.normal_peak_max is not None:
+        cur_max = req.normal_peak_max
+    emg_state.settings.normal_peak = (cur_min, cur_max)
+    if req.recovery_improvement is not None:
+        emg_state.settings.recovery_improvement = req.recovery_improvement
+    return True
 
 
 @app.get("/api/arduino/session/{session_id}/data")
