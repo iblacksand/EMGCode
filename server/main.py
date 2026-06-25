@@ -1,5 +1,6 @@
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import (
     FastAPI,
@@ -8,7 +9,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from data import (
@@ -28,9 +29,9 @@ emg_state = EMGState()
 
 
 class UpdateSettingsRequest(BaseModel):
-    normal_peak_min: float | None
-    normal_peak_max: float | None
-    recovery_improvement: float | None
+    normal_peak_min: Optional[float] = Field(None)
+    normal_peak_max: Optional[float] = Field(None)
+    recovery_improvement: Optional[float] = Field(None)
 
 
 class ArduinoBatchRequest(BaseModel):
@@ -177,6 +178,11 @@ def list_batches(session: SessionDep):
             detail="No sessions not found",
         )
     return [s.model_dump(mode="json") for s in all_sessions]
+
+
+@app.get("/api/arduino/get_recovery_percent")
+async def get_recovery_percent() -> float:
+    return emg_state.settings.recovery_improvement
 
 
 @app.post("/api/update_settings")

@@ -5,10 +5,19 @@ from enum import Enum, auto
 from pydantic import BaseModel
 
 
-class EMGStages(Enum):
+class EMGStage(Enum):
     NEEDS_CALIBRATION = auto()
     CALIBRATING = auto()
     CALIBRATED = auto()
+
+    def __str__(self) -> str:
+        match self:
+            case EMGStage.NEEDS_CALIBRATION:
+                return "needs_calibration"
+            case EMGStage.CALIBRATING:
+                return "calibrating"
+            case EMGStage.CALIBRATED:
+                return "calibrated"
 
 
 class NumericRange:
@@ -42,6 +51,11 @@ class EMGSettings(BaseModel):
 
 class EMGState:
     settings: EMGSettings
+    stage: EMGStage
 
     def __init__(self, settings: EMGSettings | None = None) -> None:
         self.settings = settings if settings is not None else EMGSettings()
+        self.stage = EMGStage.NEEDS_CALIBRATION
+
+    def state_as_text(self) -> str:
+        return str(self.stage)
