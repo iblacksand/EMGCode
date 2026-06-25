@@ -3,9 +3,9 @@
 #include <ArduinoJson.h>
 
 
-const int RED_LIGHT_PIN = 1;
+const int RED_LIGHT_PIN = 3;
 const int BLUE_LIGHT_PIN = 2;
-const int GREEN_LIGHT_PIN = 3;
+const int GREEN_LIGHT_PIN = 1;
 
 const char* WIFI_SSID = "EnMedPrintFarm";
 const char* WIFI_PASSWORD = "Physician33r";
@@ -50,28 +50,28 @@ void update_lights() {
   switch (current_status) {
     case LightStatus::Off:
       analogWrite(RED_LIGHT_PIN, 0);
-      analogWrite(BLUE_LIGHT_PIN, 0);
       analogWrite(GREEN_LIGHT_PIN, 0);
+      analogWrite(BLUE_LIGHT_PIN, 0);
       break;
     case LightStatus::Error:
       analogWrite(RED_LIGHT_PIN, 255);
-      analogWrite(BLUE_LIGHT_PIN, 0);
       analogWrite(GREEN_LIGHT_PIN, 0);
+      analogWrite(BLUE_LIGHT_PIN, 0);
       break;
     case LightStatus::Good:
-      analogWrite(RED_LIGHT_PIN, 0);
-      analogWrite(BLUE_LIGHT_PIN, 0);
-      analogWrite(GREEN_LIGHT_PIN, 255);
+      analogWrite(RED_LIGHT_PIN, 218);
+      analogWrite(GREEN_LIGHT_PIN, 165);
+      analogWrite(BLUE_LIGHT_PIN, 32);
       break;
     case LightStatus::Normal:
       analogWrite(RED_LIGHT_PIN, 0);
-      analogWrite(BLUE_LIGHT_PIN, 255);
       analogWrite(GREEN_LIGHT_PIN, 0);
+      analogWrite(BLUE_LIGHT_PIN, 255);
       break;
     case LightStatus::Calibrating:
       analogWrite(RED_LIGHT_PIN, 0);
-      analogWrite(BLUE_LIGHT_PIN, 255);
       analogWrite(GREEN_LIGHT_PIN, 255);
+      analogWrite(BLUE_LIGHT_PIN, 255);
       break;
     case LightStatus::Ignore:
     default:
@@ -85,7 +85,7 @@ bool connectWifi() {
 
   while (WiFi.begin(WIFI_SSID, WIFI_PASSWORD) != WL_CONNECTED) {
     Serial.println("Connection failed. Retrying...");
-    delay(5000);
+    delay(2000);
   }
 
   Serial.println("Connected!");
@@ -297,7 +297,7 @@ void loop() {
 
   set_light_status(basic_status(current_reading));
 
-  values[valueCount++] = analogRead(current_reading);
+  values[valueCount++] = current_reading;
   lastSampleMicros = now;
 
   if (valueCount >= BATCH_SIZE) {
