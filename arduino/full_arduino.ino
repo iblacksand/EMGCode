@@ -41,12 +41,35 @@ enum LightStatus {
 LightStatus current_status = LightStatus::Ignore;
 
 
+unsigned long last_blink = 0;
+int blink_interval = 1000;
+bool blink_on = true;
+bool enable_blink = false;
+
+bool handle_blink() {
+    if (enable_blink) {
+        unsigned long now = millis();
+        if ((now - last_blink) >= blink_interval) {
+            blink_on = !blink_on;
+            last_blink = millis()
+        }
+        return blink_on;
+    }
+    return true;
+}
+
 void set_light_status(LightStatus status) {
   current_status = status;
   update_lights();
 }
 
 void update_lights() {
+  if (!handle_blink()) {
+      analogWrite(RED_LIGHT_PIN, 0);
+      analogWrite(GREEN_LIGHT_PIN, 0);
+      analogWrite(BLUE_LIGHT_PIN, 0);
+      return;
+  }
   switch (current_status) {
     case LightStatus::Off:
       analogWrite(RED_LIGHT_PIN, 0);
@@ -79,6 +102,62 @@ void update_lights() {
   }
 }
 
+bool get_status() {
+  client.beginRequest();
+  client.get("/api/arduino/status?session=" + sessionId);
+  client.endRequest();
+
+  int statusCode = client.responseStatusCode();
+
+  if (statusCode != 200) {
+    Serial.print("Status request failed: ");
+    Serial.println(statusCode);
+
+    if (client.connected()) {
+      client.responseBody();
+    }
+
+    return false;
+  }
+
+  String body = client.responseBody();
+
+  JsonDocument doc;
+
+  DeserializationError err = deserializeJson(doc, body);
+
+  if (err) {
+    Serial.print("JSON parse failed: ");
+    Serial.println(err.c_str());
+    return false;
+  }
+
+  const char* status = doc["status"];
+
+  if (strcmp(status, "calibrating") == 0) {
+    set_light_status(LightStatus::Calibrating);
+  } else if (strcmp(status, "normal") == 0) {
+    set_light_status(LightStatus::Normal);
+  } else if (strcmp(status, "good") == 0) {
+    set_light_status(LightStatus::Good);
+  } else if (strcmp(status, "error") == 0) {
+    set_light_status(LightStatus::Error);
+  } else {
+    set_light_status(LightStatus::Ignore);
+  }
+
+  return true;
+}
+
+LightStatus basic_status(int current_val) {
+    if (current_val < 100) {
+        return LightStatus::Error;
+    }
+    if (100 < current_val && 300 > current_val) {
+        return LightStatus::Normal;
+    }
+    return LightStatus::Good;
+}
 
 bool connectWifi() {
   Serial.println("Connecting to WiFi...");
@@ -219,62 +298,7 @@ void setup() {
   Serial.println("Ready.");
 }
 
-bool get_status() {
-  client.beginRequest();
-  client.get("/api/arduino/status?session=" + sessionId);
-  client.endRequest();
 
-  int statusCode = client.responseStatusCode();
-
-  if (statusCode != 200) {
-    Serial.print("Status request failed: ");
-    Serial.println(statusCode);
-
-    if (client.connected()) {
-      client.responseBody();
-    }
-
-    return false;
-  }
-
-  String body = client.responseBody();
-
-  JsonDocument doc;
-
-  DeserializationError err = deserializeJson(doc, body);
-
-  if (err) {
-    Serial.print("JSON parse failed: ");
-    Serial.println(err.c_str());
-    return false;
-  }
-
-  const char* status = doc["status"];
-
-  if (strcmp(status, "calibrating") == 0) {
-    set_light_status(LightStatus::Calibrating);
-  } else if (strcmp(status, "normal") == 0) {
-    set_light_status(LightStatus::Normal);
-  } else if (strcmp(status, "good") == 0) {
-    set_light_status(LightStatus::Good);
-  } else if (strcmp(status, "error") == 0) {
-    set_light_status(LightStatus::Error);
-  } else {
-    set_light_status(LightStatus::Ignore);
-  }
-
-  return true;
-}
-
-LightStatus basic_status(int current_val) {
-    if (current_val < 100) {
-        return LightStatus::Error;
-    }
-    if (100 < current_val && 300 > current_val) {
-        return LightStatus::Normal;
-    }
-    return LightStatus::Good;
-}
 
 void loop() {
 
