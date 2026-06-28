@@ -1,8 +1,11 @@
 <main class="hero">
 	<div>
 		<h1>EMG Dashboard</h1>
-		<a href="/view" role="button">View Data</a>
-		<a href="/live" role="button">View Live Data</a>
+		<div class="button-group">
+			<a href="/sessions/" role="button">View Sessions</a>
+			<a href="/live/" role="button">Live Monitor</a>
+			<a href="/settings/" role="button" class="secondary">Settings</a>
+		</div>
 	</div>
 </main>
 
@@ -17,12 +20,13 @@
 
 	.hero h1 {
 		font-size: clamp(3rem, 8vw, 6rem);
-		margin-bottom: 0.5rem;
+		margin-bottom: 2rem;
 	}
 
-	/* .hero p {
-        font-size: 1.25rem;
-        opacity: 0.8;
-        margin-bottom: 2rem;
-    } */
+	.button-group {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		min-width: 250px;
+	}
 </style>

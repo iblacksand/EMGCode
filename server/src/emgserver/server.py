@@ -15,6 +15,7 @@ from sqlmodel import select
 
 from .data import (
     ArduinoSession,
+    FlexEvent,
     MeasurementBatch,
     SessionDep,
     create_db_and_tables,
@@ -40,6 +41,26 @@ class ArduinoBatchRequest(BaseModel):
     start_micros: int
     sample_period_us: int
     values: list[int]
+
+
+class CalibrationRequest(BaseModel):
+    session: str
+    calibration_values: list[float]
+
+
+class FlexEventRequest(BaseModel):
+    session: str
+    timestamp_micros: int
+    peak_value: float
+    quality: str
+    batch_id: Optional[int] = None
+
+
+class SettingsResponse(BaseModel):
+    normal_peak_min: float
+    normal_peak_max: float
+    good_threshold_multiplier: float
+    poor_threshold_multiplier: float
 
 
 app = FastAPI()
@@ -190,9 +211,125 @@ def list_sessions(session: SessionDep):
                 else None,
                 "batch_count": len(batches),
                 "sample_count": total_samples,
+                "calibrated": s.calibrated,
+                "calibration_normal_peak": s.calibration_normal_peak,
+                "good_flex_count": s.good_flex_count,
+                "normal_flex_count": s.normal_flex_count,
+                "poor_flex_count": s.poor_flex_count,
             }
         )
     return result
+
+
+@app.post("/api/arduino/calibrate")
+def calibrate_session(req: CalibrationRequest, session: SessionDep):
+    arduino_session = session.exec(
+        select(ArduinoSession).where(ArduinoSession.session_id == req.session)
+    ).first()
+
+    if arduino_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if len(req.calibration_values) < 3:
+        raise HTTPException(
+            status_code=400, detail="Need at least 3 calibration flexes"
+        )
+
+    avg_peak = sum(req.calibration_values) / len(req.calibration_values)
+
+    arduino_session.calibrated = True
+    arduino_session.calibration_normal_peak = avg_peak
+
+    session.add(arduino_session)
+    session.commit()
+    session.refresh(arduino_session)
+
+    logger.info("Calibrated session %s with normal peak %.2f", req.session, avg_peak)
+
+    return {
+        "success": True,
+        "normal_peak": avg_peak,
+        "calibration_values": req.calibration_values,
+    }
+
+
+@app.post("/api/arduino/flex_event")
+def record_flex_event(req: FlexEventRequest, session: SessionDep):
+    arduino_session = session.exec(
+        select(ArduinoSession).where(ArduinoSession.session_id == req.session)
+    ).first()
+
+    if arduino_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    flex_event = FlexEvent(
+        session_id=req.session,
+        timestamp_micros=req.timestamp_micros,
+        peak_value=req.peak_value,
+        quality=req.quality,
+        batch_id=req.batch_id,
+    )
+
+    if req.quality == "good":
+        arduino_session.good_flex_count += 1
+    elif req.quality == "normal":
+        arduino_session.normal_flex_count += 1
+    elif req.quality == "poor":
+        arduino_session.poor_flex_count += 1
+
+    session.add(flex_event)
+    session.add(arduino_session)
+    session.commit()
+
+    return {"success": True, "flex_id": flex_event.id}
+
+
+@app.get("/api/arduino/session/{session_id}/flexes")
+def get_session_flexes(session_id: str, session: SessionDep):
+    flex_events = session.exec(
+        select(FlexEvent).where(FlexEvent.session_id == session_id)
+    ).all()
+
+    return [
+        {
+            "id": f.id,
+            "timestamp_micros": f.timestamp_micros,
+            "peak_value": f.peak_value,
+            "quality": f.quality,
+            "batch_id": f.batch_id,
+        }
+        for f in flex_events
+    ]
+
+
+@app.get("/api/settings")
+def get_settings():
+    normal_min, normal_max = emg_state.settings.normal_peak
+    return {
+        "normal_peak_min": normal_min,
+        "normal_peak_max": normal_max,
+        "good_threshold_multiplier": 1.0 + emg_state.settings.recovery_improvement,
+        "poor_threshold_multiplier": 0.7,
+    }
+
+
+@app.get("/api/current_session")
+def get_current_session(session: SessionDep):
+    latest_session = session.exec(
+        select(ArduinoSession).order_by(ArduinoSession.created_datetime.desc())
+    ).first()
+    
+    if latest_session is None:
+        return None
+    
+    return {
+        "session_id": latest_session.session_id,
+        "calibrated": latest_session.calibrated,
+        "calibration_normal_peak": latest_session.calibration_normal_peak,
+        "good_flex_count": latest_session.good_flex_count,
+        "normal_flex_count": latest_session.normal_flex_count,
+        "poor_flex_count": latest_session.poor_flex_count,
+    }
 
 
 @app.get("/api/list_batches")
