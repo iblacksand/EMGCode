@@ -2,7 +2,7 @@
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
 
-
+const unsigned long STATUS_CHECK_INTERVAL = 500;
 const int RED_LIGHT_PIN = 3;
 const int BLUE_LIGHT_PIN = 1;
 const int GREEN_LIGHT_PIN = 2;
@@ -135,8 +135,12 @@ bool get_status() {
   const char* status = doc["status"];
 
   if (strcmp(status, "calibrating") == 0) {
-    set_light_status(LightStatus::Calibrating);
-  } else if (strcmp(status, "normal") == 0) {
+      blink_interval = 1000;
+      enable_blink = true;
+        set_light_status(LightStatus::Calibrating);
+  } else {
+      enable_blink = false;
+      if (strcmp(status, "normal") == 0) {
     set_light_status(LightStatus::Normal);
   } else if (strcmp(status, "good") == 0) {
     set_light_status(LightStatus::Good);
@@ -144,7 +148,7 @@ bool get_status() {
     set_light_status(LightStatus::Error);
   } else {
     set_light_status(LightStatus::Ignore);
-  }
+  }}
 
   return true;
 }
@@ -297,8 +301,6 @@ void setup() {
 
   Serial.println("Ready.");
 }
-
-
 
 void loop() {
 
