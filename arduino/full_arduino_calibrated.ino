@@ -101,14 +101,14 @@ void update_lights() {
       analogWrite(GREEN_LIGHT_PIN, 255);
       analogWrite(BLUE_LIGHT_PIN, 0);
       break;
-    case LightStatus::Normal:
-      analogWrite(RED_LIGHT_PIN, 218);
-      analogWrite(GREEN_LIGHT_PIN, 165);
-      analogWrite(BLUE_LIGHT_PIN, 32);
+    case LightStatus::Normal: // Off?
+      analogWrite(RED_LIGHT_PIN, 0);
+      analogWrite(GREEN_LIGHT_PIN, 0);
+      analogWrite(BLUE_LIGHT_PIN, 0);
       break;
     case LightStatus::Calibrating:
       analogWrite(RED_LIGHT_PIN, 0);
-      analogWrite(GREEN_LIGHT_PIN, 255);
+      analogWrite(GREEN_LIGHT_PIN, 0);
       analogWrite(BLUE_LIGHT_PIN, 255);
       break;
     case LightStatus::Poor:
@@ -170,7 +170,7 @@ LightStatus classify_flex(float peak_value) {
   if (!is_calibrated) {
     return LightStatus::Calibrating;
   }
-  
+
   if (peak_value >= good_threshold) {
     return LightStatus::Good;
   } else if (peak_value < poor_threshold) {
@@ -181,7 +181,7 @@ LightStatus classify_flex(float peak_value) {
 
 bool send_flex_event(float peak_value, const char* quality) {
   JsonDocument doc;
-  
+
   doc["session"] = sessionId;
   doc["timestamp_micros"] = peak_timestamp;
   doc["peak_value"] = peak_value;
@@ -206,10 +206,10 @@ bool send_flex_event(float peak_value, const char* quality) {
 
 bool send_calibration() {
   JsonDocument doc;
-  
+
   doc["session"] = sessionId;
   JsonArray arr = doc["calibration_values"].to<JsonArray>();
-  
+
   for (int i = 0; i < calibration_count; i++) {
     arr.add(calibration_peaks[i]);
   }
@@ -245,7 +245,7 @@ bool send_calibration() {
   }
 
   normal_peak = resp["normal_peak"];
-  
+
   good_threshold = normal_peak * good_multiplier;
   poor_threshold = normal_peak * poor_multiplier;
 
@@ -371,16 +371,16 @@ bool sendBatch() {
   } else if (current_batch_max > 50 && is_calibrated) {
     LightStatus status = classify_flex(current_batch_max);
     set_light_status(status);
-    
+
     const char* quality = "normal";
     if (status == LightStatus::Good) {
       quality = "good";
     } else if (status == LightStatus::Poor) {
       quality = "poor";
     }
-    
+
     send_flex_event(current_batch_max, quality);
-    
+
     Serial.print("Flex detected: ");
     Serial.print(current_batch_max);
     Serial.print(" - ");
@@ -433,7 +433,7 @@ void setup() {
   while (!createSession()) {
     delay(2000);
   }
-  
+
   get_settings();
 
   set_light_status(LightStatus::Calibrating);
@@ -471,8 +471,8 @@ void loop() {
   values[valueCount++] = current_reading;
   lastSampleMicros = now;
 
-  // Send live data every 10 samples to reduce HTTP overhead
-  if (valueCount % 10 == 0) {
+  // Send live data every 100 samples to reduce HTTP overhead
+  if (valueCount % 100 == 0) {
     send_live_value(current_reading);
   }
 
@@ -488,12 +488,12 @@ bool send_live_value(int value) {
   client.beginRequest();
   client.get("/api/arduino/single/" + String(value));
   client.endRequest();
-  
+
   int statusCode = client.responseStatusCode();
-  
+
   if (client.connected()) {
     client.responseBody();
   }
-  
+
   return statusCode == 200;
 }

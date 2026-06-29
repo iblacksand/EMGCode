@@ -318,10 +318,10 @@ def get_current_session(session: SessionDep):
     latest_session = session.exec(
         select(ArduinoSession).order_by(ArduinoSession.created_datetime.desc())
     ).first()
-    
+
     if latest_session is None:
         return None
-    
+
     return {
         "session_id": latest_session.session_id,
         "calibrated": latest_session.calibrated,
