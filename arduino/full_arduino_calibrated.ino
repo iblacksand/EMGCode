@@ -4,8 +4,8 @@
 
 const unsigned long STATUS_CHECK_INTERVAL = 500;
 const int RED_LIGHT_PIN = 3;
-const int BLUE_LIGHT_PIN = 1;
 const int GREEN_LIGHT_PIN = 2;
+const int BLUE_LIGHT_PIN = 1;
 
 const char* WIFI_SSID = "EnMedPrintFarm";
 const char* WIFI_PASSWORD = "Physician33r";
@@ -13,8 +13,11 @@ const char* WIFI_PASSWORD = "Physician33r";
 const char SERVER[] = "192.168.1.195";
 const int PORT = 8000;
 
-const int BATCH_SIZE = 500;
+const int BATCH_SIZE = 5000;
 const int CALIBRATION_FLEXES = 3;
+
+const int min_peak_duration_ms = 250;
+const float min_peak_percentage = 0.85;
 
 WiFiClient wifi;
 HttpClient client(wifi, SERVER, PORT);
@@ -35,7 +38,7 @@ float poor_threshold = 0;
 unsigned long batchStartMicros = 0;
 unsigned long lastSampleMicros = 0;
 
-float normal_peak_min = 100.0;
+float normal_peak_min = 150.0;
 float normal_peak_max = 300.0;
 float good_multiplier = 1.2;
 float poor_multiplier = 0.7;
@@ -364,7 +367,7 @@ bool sendBatch() {
 
       if (calibration_count >= CALIBRATION_FLEXES) {
         if (send_calibration()) {
-          set_light_status(LightStatus::Normal);
+          set_light_status(LightStatus::Good);
         }
       }
     }
