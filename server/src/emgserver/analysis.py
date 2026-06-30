@@ -12,7 +12,7 @@ from emgserver.data import FlexEvent
 
 MIN_HEIGHT = 100
 MIN_GAP_MS = 30
-MIN_PEAK_DURATION_US = 250 * 1000  # 250 ms
+MIN_PEAK_DURATION_MS = 400  # 250 ms
 MIN_PEAK_PERCENTAGE = 0.85
 
 
@@ -30,6 +30,7 @@ def classify_peaks(
     data: list[tuple[int, float]],
     ranges: tuple[float, float, float],
     session: str,
+    batch_id: int,
 ) -> list[FlexEvent]:
     """
     Parameters
@@ -88,6 +89,7 @@ def classify_peaks(
                 timestamp_micros=peak_time,
                 peak_value=peak_max,
                 quality=quality,
+                batch_id=batch_id,
             )
         )
 

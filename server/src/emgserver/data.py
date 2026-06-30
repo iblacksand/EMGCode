@@ -24,13 +24,14 @@ class ArduinoSession(SQLModel, table=True):
             server_default=text("CURRENT_TIMESTAMP"),
         )
     )
-    
+
     calibrated: bool = Field(default=False)
+    calibration_peaks: list[float] = Field(default=[], sa_column=Column(JSON))
     calibration_normal_peak: Optional[float] = Field(default=None)
     good_flex_count: int = Field(default=0)
     normal_flex_count: int = Field(default=0)
     poor_flex_count: int = Field(default=0)
-    
+
     measurement_batches: list["MeasurementBatch"] = Relationship(
         back_populates="arduino_session"
     )
@@ -58,11 +59,9 @@ class FlexEvent(SQLModel, table=True):
     session_id: str | None = Field(
         default=None, foreign_key="arduinosession.session_id"
     )
-    
-    arduino_session: list[ArduinoSession] = Relationship(
-        back_populates="flex_events"
-    )
-    
+
+    arduino_session: list[ArduinoSession] = Relationship(back_populates="flex_events")
+
     timestamp_micros: int
     peak_value: float
     quality: str  # "good", "normal", "poor"

@@ -68,6 +68,38 @@ app = FastAPI()
 receivers: set[WebSocket] = set()
 
 
+async def broadcast_batch_data(
+    batch_id: int, values: list[int], flex_events: list[FlexEvent]
+):
+    import json
+
+    message = json.dumps(
+        {
+            "type": "batch_data",
+            "batch_id": batch_id,
+            "values": values,
+            "flex_events": [
+                {
+                    "timestamp_micros": f.timestamp_micros,
+                    "peak_value": f.peak_value,
+                    "quality": f.quality,
+                }
+                for f in flex_events
+            ],
+        }
+    )
+
+    dead = []
+    for receiver in receivers:
+        try:
+            await receiver.send_text(message)
+        except Exception:
+            dead.append(receiver)
+
+    for receiver in dead:
+        receivers.discard(receiver)
+
+
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
@@ -78,7 +110,7 @@ def hello():
     return {"message": "Hello from FastAPI"}
 
 
-@app.get("/api/arduino/new_session")
+@app.post("/api/arduino/new_session")
 def new_session(
     session: SessionDep,
 ) -> dict[str, str]:
@@ -99,8 +131,99 @@ def new_session(
     }
 
 
+@app.post("/api/arduino/calibration_signal")
+async def calibration_signal(
+    req: ArduinoBatchRequest,
+    session: SessionDep,
+):
+    if len(req.values) == 0:
+        raise HTTPException(status_code=400, detail="Empty batch")
+
+    arduino_session = session.exec(
+        select(ArduinoSession).where(ArduinoSession.session_id == req.session)
+    ).first()
+
+    if arduino_session is None:
+        raise HTTPException(status_code=404, detail="Unknown session")
+
+    if arduino_session.calibrated:
+        logger.warning(
+            "Calibration rejected for session %s: session already calibrated",
+            req.session,
+        )
+        return False
+
+    if len(arduino_session.calibration_peaks) >= 3:
+        logger.warning(
+            "Calibration rejected for session %s: already have 3 calibration batches",
+            req.session,
+        )
+        return False
+
+    peak_value = max(req.values)
+    mean_value = sum(req.values) / len(req.values)
+
+    MIN_PEAK_THRESHOLD = 100
+    MIN_PEAK_TO_MEAN_RATIO = 1.5
+
+    if peak_value < MIN_PEAK_THRESHOLD:
+        logger.info(
+            "Calibration rejected for session %s: peak %.2f below threshold %d",
+            req.session,
+            peak_value,
+            MIN_PEAK_THRESHOLD,
+        )
+        return False
+
+    if peak_value / mean_value < MIN_PEAK_TO_MEAN_RATIO:
+        logger.info(
+            "Calibration rejected for session %s: peak/mean ratio %.2f too low",
+            req.session,
+            peak_value / mean_value,
+        )
+        return False
+
+    batch = MeasurementBatch(
+        session_id=req.session,
+        start_micros=req.start_micros,
+        sample_period_us=req.sample_period_us,
+        values=req.values,
+    )
+    session.add(batch)
+    session.commit()
+    session.refresh(batch)
+    session.refresh(arduino_session)
+
+    arduino_session.calibration_peaks = arduino_session.calibration_peaks + [peak_value]
+
+    if len(arduino_session.calibration_peaks) == 3:
+        avg_peak = sum(arduino_session.calibration_peaks) / 3
+        arduino_session.calibration_normal_peak = avg_peak
+        arduino_session.calibrated = True
+
+        logger.info(
+            "Calibration complete for session %s: collected peaks %s, average normal peak %.2f",
+            req.session,
+            arduino_session.calibration_peaks,
+            avg_peak,
+        )
+    else:
+        logger.info(
+            "Calibration batch %d accepted for session %s: peak %.2f (need %d more)",
+            len(arduino_session.calibration_peaks),
+            req.session,
+            peak_value,
+            3 - len(arduino_session.calibration_peaks),
+        )
+
+    session.add(arduino_session)
+    session.commit()
+
+    return True
+
+
 @app.post("/api/arduino/batch")
-def arduino_batch(
+async def arduino_batch(
     req: ArduinoBatchRequest,
     session: SessionDep,
 ):
@@ -144,6 +267,40 @@ def arduino_batch(
         len(req.values),
         req.start_micros,
     )
+
+    if arduino_session.calibrated and arduino_session.calibration_normal_peak:
+        import asyncio
+
+        from .analysis import classify_peaks
+
+        normal_peak = arduino_session.calibration_normal_peak
+        good_threshold = normal_peak * (1.0 + emg_state.settings.recovery_improvement)
+        poor_threshold = normal_peak * 0.25
+
+        data = [
+            (req.start_micros + i * req.sample_period_us, float(val))
+            for i, val in enumerate(req.values)
+        ]
+
+        flex_events = classify_peaks(
+            data, (poor_threshold, normal_peak, good_threshold), req.session, batch.id
+        )
+
+        for flex in flex_events:
+            flex.batch_id = batch.id
+            session.add(flex)
+
+            if flex.quality == "good":
+                arduino_session.good_flex_count += 1
+            elif flex.quality == "normal":
+                arduino_session.normal_flex_count += 1
+            elif flex.quality == "poor":
+                arduino_session.poor_flex_count += 1
+        session.add(arduino_session)
+        session.commit()
+        logger.info("Detected %d flex events in batch %s", len(flex_events), batch.id)
+
+        asyncio.create_task(broadcast_batch_data(batch.id, req.values, flex_events))
 
     return {
         "success": True,
@@ -212,6 +369,7 @@ def list_sessions(session: SessionDep):
                 "batch_count": len(batches),
                 "sample_count": total_samples,
                 "calibrated": s.calibrated,
+                "calibration_peaks": s.calibration_peaks,
                 "calibration_normal_peak": s.calibration_normal_peak,
                 "good_flex_count": s.good_flex_count,
                 "normal_flex_count": s.normal_flex_count,
@@ -303,13 +461,22 @@ def get_session_flexes(session_id: str, session: SessionDep):
 
 
 @app.get("/api/settings")
-def get_settings():
-    normal_min, normal_max = emg_state.settings.normal_peak
+def get_settings(session: SessionDep):
+    latest_session = session.exec(
+        select(ArduinoSession).order_by(ArduinoSession.created_datetime.desc())
+    ).first()
+
+    if latest_session is None or latest_session.calibration_normal_peak is None:
+        raise HTTPException(status_code=404, detail="No calibrated session found")
+
+    normal_peak = latest_session.calibration_normal_peak
+    good_threshold = normal_peak * (1.0 + emg_state.settings.recovery_improvement)
+    poor_threshold = normal_peak * 0.7
+
     return {
-        "normal_peak_min": normal_min,
-        "normal_peak_max": normal_max,
-        "good_threshold_multiplier": 1.0 + emg_state.settings.recovery_improvement,
-        "poor_threshold_multiplier": 0.7,
+        "normal_peak": normal_peak,
+        "good_threshold": good_threshold,
+        "poor_threshold": poor_threshold,
     }
 
 
@@ -325,6 +492,7 @@ def get_current_session(session: SessionDep):
     return {
         "session_id": latest_session.session_id,
         "calibrated": latest_session.calibrated,
+        "calibration_peaks": latest_session.calibration_peaks,
         "calibration_normal_peak": latest_session.calibration_normal_peak,
         "good_flex_count": latest_session.good_flex_count,
         "normal_flex_count": latest_session.normal_flex_count,
